@@ -6,9 +6,7 @@
 # -o pipefail: Pipeline exit code is the code of the last command to fail
 set -euo pipefail
 
-echo "--- 1. Installing Python ---"
-
-echo "--- 2. Initializing Claude ---"
+echo "--- 1. Configuring Claude ---"
 
 cat > ~/.claude.json << 'EOF'
 {
@@ -22,7 +20,7 @@ cat > ~/.claude.json << 'EOF'
 }
 EOF
 
-echo "--- 3. Configuring GitHub CLI ---"
+echo "--- 2. Configuring GitHub CLI ---"
 
 if [ -n "${GH_TOKEN:-}" ]; then
     gh auth setup-git
