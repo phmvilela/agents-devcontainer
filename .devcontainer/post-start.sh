@@ -28,6 +28,16 @@ if [ -n "${GPG_PRIVATE_KEY:-}" ]; then
         git config --global commit.gpgsign true
         git config --global tag.gpgsign true
 
+        # Set git identity from the key's UID (e.g. "pgcyan Developer <dev@example.com>")
+        KEY_UID=$(gpg --with-colons --list-keys "$FPR" | awk -F: '/^uid:/ {print $10; exit}')
+        KEY_NAME=$(echo "$KEY_UID" | sed -E 's/[[:space:]]*<[^>]*>[[:space:]]*$//')
+        KEY_EMAIL=$(echo "$KEY_UID" | sed -E 's/.*<([^>]*)>.*/\1/')
+        if [ -n "$KEY_NAME" ] && [ -n "$KEY_EMAIL" ]; then
+            git config --global user.name "$KEY_NAME"
+            git config --global user.email "$KEY_EMAIL"
+            echo "git user.name/user.email set from GPG key UID: $KEY_NAME <$KEY_EMAIL>"
+        fi
+
         # Allow non-interactive (loopback) passphrase entry so signing works headless
         grep -qxF "allow-loopback-pinentry" ~/.gnupg/gpg-agent.conf 2>/dev/null || \
             echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
