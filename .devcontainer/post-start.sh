@@ -1,0 +1,53 @@
+#!/bin/bash
+
+# --- Robustness Settings ---
+# -e: Exit immediately if a command fails
+# -u: Treat unset variables as an error
+# -o pipefail: Pipeline exit code is the code of the last command to fail
+set -euo pipefail
+
+echo "--- 1. Initializing firewall ---"
+sudo /usr/local/bin/firewall-init.sh
+
+echo "--- 2. Configuring GPG signing ---"
+
+if [ -n "${GPG_PRIVATE_KEY:-}" ]; then
+    mkdir -p ~/.gnupg && chmod 700 ~/.gnupg
+
+    # Import the ASCII-armored private key (passed base64-encoded to survive env vars).
+    # Capture status output so we can target the *just-imported* key (handles rotation).
+    IMPORT_STATUS=$(echo "$GPG_PRIVATE_KEY" | base64 -d | gpg --batch --import --status-fd 1 2>/dev/null || true)
+    FPR=$(echo "$IMPORT_STATUS" | awk '/IMPORT_OK/ {print $4; exit}')
+
+    if [ -n "$FPR" ]; then
+        # Mark the imported key as ultimately trusted
+        echo -e "5\ny\n" | gpg --batch --command-fd 0 --edit-key "$FPR" trust quit >/dev/null 2>&1 || true
+
+        # Configure git to sign commits and tags with it
+        git config --global user.signingkey "$FPR"
+        git config --global commit.gpgsign true
+        git config --global tag.gpgsign true
+
+        # Allow non-interactive (loopback) passphrase entry so signing works headless
+        grep -qxF "allow-loopback-pinentry" ~/.gnupg/gpg-agent.conf 2>/dev/null || \
+            echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
+        grep -qxF "pinentry-mode loopback" ~/.gnupg/gpg.conf 2>/dev/null || \
+            echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
+        gpgconf --reload gpg-agent >/dev/null 2>&1 || true
+
+        # If the key has a passphrase, prime the agent cache so git doesn't prompt
+        if [ -n "${GPG_PASSPHRASE:-}" ]; then
+            echo "test" | gpg --batch --yes --pinentry-mode loopback \
+                --passphrase "$GPG_PASSPHRASE" --local-user "$FPR" \
+                --sign --armor >/dev/null 2>&1 || true
+        fi
+
+        echo "GPG signing configured with key $FPR"
+    else
+        echo "Could not determine the imported key fingerprint; skipping git signing config."
+    fi
+else
+    echo "GPG_PRIVATE_KEY not set in host environment; skipping GPG setup."
+fi
+
+echo "--- Post-start complete! ---"
