@@ -34,11 +34,14 @@
         "DISABLE_AUTOUPDATER": "1"
     },
     "postCreateCommand": "bash .devcontainer/post-create.sh",
-    "postStartCommand": "sudo /usr/local/bin/firewall-init.sh",
+    "postStartCommand": "bash .devcontainer/post-start.sh",
     // Inject your API Key / tokens from your Windows/WSL environment
     "remoteEnv": {
         "CLAUDE_CODE_OAUTH_TOKEN": "${localEnv:CLAUDE_CODE_OAUTH_TOKEN}",
-        "GH_TOKEN": "${localEnv:GH_TOKEN}"
+        "GH_TOKEN": "${localEnv:GH_TOKEN}",
+        // Base64-encoded ASCII-armored private key + optional passphrase (see post-create.sh)
+        "GPG_PRIVATE_KEY": "${localEnv:GPG_PRIVATE_KEY}",
+        "GPG_PASSPHRASE": "${localEnv:GPG_PASSPHRASE}"
     },
     "remoteUser": "vscode",
     "containerUser": "vscode",
