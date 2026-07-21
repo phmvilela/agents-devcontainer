@@ -43,6 +43,16 @@ if [ -n "${GPG_PRIVATE_KEY:-}" ]; then
             echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
         grep -qxF "pinentry-mode loopback" ~/.gnupg/gpg.conf 2>/dev/null || \
             echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
+
+        # Keep the primed passphrase cached for the container's lifetime. gpg-agent
+        # defaults (600s idle / 7200s max) would evict it within a couple of hours,
+        # after which headless signing fails with "cannot open '/dev/tty'". The
+        # passphrase already lives in $GPG_PASSPHRASE, so caching it long-term here
+        # does not change the security posture of an ephemeral dev container.
+        grep -qxF "default-cache-ttl 34560000" ~/.gnupg/gpg-agent.conf 2>/dev/null || \
+            echo "default-cache-ttl 34560000" >> ~/.gnupg/gpg-agent.conf
+        grep -qxF "max-cache-ttl 34560000" ~/.gnupg/gpg-agent.conf 2>/dev/null || \
+            echo "max-cache-ttl 34560000" >> ~/.gnupg/gpg-agent.conf
         gpgconf --reload gpg-agent >/dev/null 2>&1 || true
 
         # If the key has a passphrase, prime the agent cache so git doesn't prompt
