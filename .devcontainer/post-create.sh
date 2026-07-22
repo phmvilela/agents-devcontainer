@@ -8,6 +8,7 @@ set -euo pipefail
 
 echo "--- 1. Configuring Claude ---"
 
+alias superclaude='claude --dangerously-skip-permissions'
 cat > ~/.claude.json << 'EOF'
 {
   "hasCompletedOnboarding": true,
