@@ -31,7 +31,12 @@
         5173
     ],
     "containerEnv": {
-        "DISABLE_AUTOUPDATER": "1"
+        "DISABLE_AUTOUPDATER": "1",
+        // Sign commits with a container-local GPG keyring instead of the host
+        // gpg-agent socket VS Code forwards to ~/.gnupg (that forwarded agent
+        // forbids loopback pinentry, breaking headless signing). See
+        // .devcontainer/post-start.d/20-gpg-signing.sh for the full rationale.
+        "GNUPGHOME": "/home/vscode/.gnupg-signing"
     },
     "postCreateCommand": "bash .devcontainer/post-create.sh",
     "postStartCommand": "bash .devcontainer/post-start.sh",

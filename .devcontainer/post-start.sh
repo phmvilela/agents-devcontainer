@@ -1,4 +1,11 @@
 #!/bin/bash
+#
+# post-start lifecycle hook — runs on every container start.
+#
+# This is a thin aggregator. Each concern (firewall, GPG signing, ...) lives in
+# its own script under post-start.d/, run here in lexical order — the numeric
+# prefixes (10-, 20-, ...) set that order. To add a step, drop a new script into
+# post-start.d/; you do not need to edit this file.
 
 # --- Robustness Settings ---
 # -e: Exit immediately if a command fails
@@ -6,68 +13,17 @@
 # -o pipefail: Pipeline exit code is the code of the last command to fail
 set -euo pipefail
 
-echo "--- 1. Initializing firewall ---"
-sudo /usr/local/bin/firewall-init.sh
+STEPS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/post-start.d"
 
-echo "--- 2. Configuring GPG signing ---"
-
-if [ -n "${GPG_PRIVATE_KEY:-}" ]; then
-    mkdir -p ~/.gnupg && chmod 700 ~/.gnupg
-
-    # Import the ASCII-armored private key (passed base64-encoded to survive env vars).
-    # Capture status output so we can target the *just-imported* key (handles rotation).
-    IMPORT_STATUS=$(echo "$GPG_PRIVATE_KEY" | base64 -d | gpg --batch --import --status-fd 1 2>/dev/null || true)
-    FPR=$(echo "$IMPORT_STATUS" | awk '/IMPORT_OK/ {print $4; exit}')
-
-    if [ -n "$FPR" ]; then
-        # Mark the imported key as ultimately trusted
-        echo -e "5\ny\n" | gpg --batch --command-fd 0 --edit-key "$FPR" trust quit >/dev/null 2>&1 || true
-
-        # Configure git to sign commits and tags with it
-        git config --global user.signingkey "$FPR"
-        git config --global commit.gpgsign true
-        git config --global tag.gpgsign true
-
-        # Set git identity from the key's UID (e.g. "pgcyan Developer <dev@example.com>")
-        KEY_UID=$(gpg --with-colons --list-keys "$FPR" | awk -F: '/^uid:/ {print $10; exit}')
-        KEY_NAME=$(echo "$KEY_UID" | sed -E 's/[[:space:]]*<[^>]*>[[:space:]]*$//')
-        KEY_EMAIL=$(echo "$KEY_UID" | sed -E 's/.*<([^>]*)>.*/\1/')
-        if [ -n "$KEY_NAME" ] && [ -n "$KEY_EMAIL" ]; then
-            git config --global user.name "$KEY_NAME"
-            git config --global user.email "$KEY_EMAIL"
-            echo "git user.name/user.email set from GPG key UID: $KEY_NAME <$KEY_EMAIL>"
-        fi
-
-        # Allow non-interactive (loopback) passphrase entry so signing works headless
-        grep -qxF "allow-loopback-pinentry" ~/.gnupg/gpg-agent.conf 2>/dev/null || \
-            echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
-        grep -qxF "pinentry-mode loopback" ~/.gnupg/gpg.conf 2>/dev/null || \
-            echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
-
-        # Keep the primed passphrase cached for the container's lifetime. gpg-agent
-        # defaults (600s idle / 7200s max) would evict it within a couple of hours,
-        # after which headless signing fails with "cannot open '/dev/tty'". The
-        # passphrase already lives in $GPG_PASSPHRASE, so caching it long-term here
-        # does not change the security posture of an ephemeral dev container.
-        grep -qxF "default-cache-ttl 34560000" ~/.gnupg/gpg-agent.conf 2>/dev/null || \
-            echo "default-cache-ttl 34560000" >> ~/.gnupg/gpg-agent.conf
-        grep -qxF "max-cache-ttl 34560000" ~/.gnupg/gpg-agent.conf 2>/dev/null || \
-            echo "max-cache-ttl 34560000" >> ~/.gnupg/gpg-agent.conf
-        gpgconf --reload gpg-agent >/dev/null 2>&1 || true
-
-        # If the key has a passphrase, prime the agent cache so git doesn't prompt
-        if [ -n "${GPG_PASSPHRASE:-}" ]; then
-            echo "test" | gpg --batch --yes --pinentry-mode loopback \
-                --passphrase "$GPG_PASSPHRASE" --local-user "$FPR" \
-                --sign --armor >/dev/null 2>&1 || true
-        fi
-
-        echo "GPG signing configured with key $FPR"
-    else
-        echo "Could not determine the imported key fingerprint; skipping git signing config."
-    fi
-else
-    echo "GPG_PRIVATE_KEY not set in host environment; skipping GPG setup."
+if [ ! -d "$STEPS_DIR" ]; then
+    echo "No steps directory at $STEPS_DIR; nothing to do."
+    exit 0
 fi
+
+for step in "$STEPS_DIR"/*.sh; do
+    [ -e "$step" ] || continue   # empty glob stays literal; skip it
+    echo "=== post-start: running $(basename "$step") ==="
+    bash "$step"
+done
 
 echo "--- Post-start complete! ---"
