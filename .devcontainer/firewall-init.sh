@@ -64,20 +64,15 @@ while read -r cidr; do
 done < <(echo "$gh_ranges" | jq -r '(.web + .api + .git)[]' | aggregate -q)
 
 # Resolve and add other allowed domains
-for domain in \
-    "registry.npmjs.org" \
-    "api.anthropic.com" \
-    "sentry.io" \
-    "statsig.com" \
-    "marketplace.visualstudio.com" \
-    "vscode.blob.core.windows.net" \
-    "update.code.visualstudio.com" \
-    "pypi.org" \
-    "files.pythonhosted.org" \
-    "registry.terraform.io" \
-    "releases.hashicorp.com" \
-    "login.microsoftonline.com" \
-    "management.azure.com"; do
+ALLOWED_DOMAINS_FILE="/etc/allowed_domains"
+if [ ! -f "$ALLOWED_DOMAINS_FILE" ]; then
+    echo "ERROR: $ALLOWED_DOMAINS_FILE not found"
+    exit 1
+fi
+
+while read -r domain; do
+    # Skip blank lines and comments
+    [[ -z "$domain" || "$domain" == \#* ]] && continue
     echo "Resolving $domain..."
     ips=$(dig +noall +answer A "$domain" | awk '$4 == "A" {print $5}')
     if [ -z "$ips" ]; then
@@ -93,7 +88,7 @@ for domain in \
         echo "Adding $ip for $domain"
         ipset add -exist allowed-domains "$ip"
     done < <(echo "$ips")
-done
+done < "$ALLOWED_DOMAINS_FILE"
 
 # Get host IP from default route
 HOST_IP=$(ip route | grep default | cut -d" " -f3)
