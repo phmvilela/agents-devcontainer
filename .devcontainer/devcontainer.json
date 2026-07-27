@@ -7,6 +7,9 @@
         "--cap-add=NET_ADMIN",
         "--cap-add=NET_RAW"
     ],
+    "mounts": [
+        "source=${localEnv:HOME}/allowed_domains,target=/etc/allowed_domains,type=bind,readonly"
+    ],
     "features": {
         "ghcr.io/devcontainers/features/common-utils:2": {
             "installZsh": true
@@ -46,7 +49,9 @@
         "GH_TOKEN": "${localEnv:GH_TOKEN}",
         // Base64-encoded ASCII-armored private key + optional passphrase (see post-create.sh)
         "GPG_PRIVATE_KEY": "${localEnv:GPG_PRIVATE_KEY}",
-        "GPG_PASSPHRASE": "${localEnv:GPG_PASSPHRASE}"
+        "GPG_PASSPHRASE": "${localEnv:GPG_PASSPHRASE}",
+        // Base64-encoded standalone, read-only kubeconfig generated on the HOST
+        "KUBECONFIG_B64": "${localEnv:KUBECONFIG_B64}"
     },
     "remoteUser": "vscode",
     "containerUser": "vscode",
