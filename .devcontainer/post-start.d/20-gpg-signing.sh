@@ -16,6 +16,19 @@
 # loopback pinentry works. We still honour an externally-set GNUPGHOME and only
 # fall back to a sensible default when run standalone.
 #
+# WHY A SELF-HEALING gpg.program (see lib/gpg-agent.sh, gpg-wrapper.sh)
+# -----------------------------------------------------------------------
+# In practice this step winning that race once at boot isn't good enough:
+# the forward can still land on $GNUPGHOME/S.gpg-agent later (a VS Code
+# reconnect, a rebuild), and even a genuinely local agent loses its primed
+# passphrase cache if it gets killed/restarted for any reason. Either way,
+# gpg can look configured (the key still shows up in --list-secret-keys)
+# while every signature actually fails. Rather than assume this step's setup
+# holds for the container's whole lifetime, git's gpg.program is pointed at
+# gpg-wrapper.sh, which runs an isolated preflight sign before every real one
+# and repairs (kill+restart the agent if forwarded, re-import, re-prime) on
+# failure.
+#
 # This step is best-effort: a missing key or a transient gpg hiccup logs and
 # skips rather than failing the whole container start.
 
@@ -28,31 +41,28 @@ if [ -z "${GPG_PRIVATE_KEY:-}" ]; then
     exit 0
 fi
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEVCONTAINER_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+# shellcheck source=../lib/gpg-agent.sh
+source "$DEVCONTAINER_DIR/lib/gpg-agent.sh"
+
 # Container-local keyring, outside the forwarded ~/.gnupg (see header).
 export GNUPGHOME="${GNUPGHOME:-/home/vscode/.gnupg-signing}"
-mkdir -p "$GNUPGHOME" && chmod 700 "$GNUPGHOME"
 
-# Import the ASCII-armored private key (passed base64-encoded to survive env
-# vars). Capture status output so we can target the *just-imported* key (handles
-# rotation).
-IMPORT_STATUS=$(echo "$GPG_PRIVATE_KEY" | base64 -d | gpg --batch --import --status-fd 1 2>/dev/null || true)
-FPR=$(echo "$IMPORT_STATUS" | awk '/IMPORT_OK/ {print $4; exit}')
-
+FPR="$(gpg_import_and_configure)"
 if [ -z "$FPR" ]; then
     echo "Could not determine the imported key fingerprint; skipping git signing config."
     exit 0
 fi
 
-# Mark the imported key as ultimately trusted.
-echo -e "5\ny\n" | gpg --batch --command-fd 0 --edit-key "$FPR" trust quit >/dev/null 2>&1 || true
-
-# Configure git to sign commits and tags with it.
+# Configure git to sign commits and tags with it, via the self-healing wrapper.
 git config --global user.signingkey "$FPR"
 git config --global commit.gpgsign true
 git config --global tag.gpgsign true
+git config --global gpg.program "$DEVCONTAINER_DIR/gpg-wrapper.sh"
 
 # Set git identity from the key's UID (e.g. "pgcyan Developer <dev@example.com>").
-KEY_UID=$(gpg --with-colons --list-keys "$FPR" | awk -F: '/^uid:/ {print $10; exit}')
+KEY_UID=$(gpg --homedir "$GNUPGHOME" --with-colons --list-keys "$FPR" | awk -F: '/^uid:/ {print $10; exit}')
 KEY_NAME=$(echo "$KEY_UID" | sed -E 's/[[:space:]]*<[^>]*>[[:space:]]*$//')
 KEY_EMAIL=$(echo "$KEY_UID" | sed -E 's/.*<([^>]*)>.*/\1/')
 if [ -n "$KEY_NAME" ] && [ -n "$KEY_EMAIL" ]; then
@@ -61,28 +71,4 @@ if [ -n "$KEY_NAME" ] && [ -n "$KEY_EMAIL" ]; then
     echo "git user.name/user.email set from GPG key UID: $KEY_NAME <$KEY_EMAIL>"
 fi
 
-# Allow non-interactive (loopback) passphrase entry so signing works headless.
-grep -qxF "allow-loopback-pinentry" "$GNUPGHOME/gpg-agent.conf" 2>/dev/null || \
-    echo "allow-loopback-pinentry" >> "$GNUPGHOME/gpg-agent.conf"
-grep -qxF "pinentry-mode loopback" "$GNUPGHOME/gpg.conf" 2>/dev/null || \
-    echo "pinentry-mode loopback" >> "$GNUPGHOME/gpg.conf"
-
-# Keep the primed passphrase cached for the container's lifetime. gpg-agent
-# defaults (600s idle / 7200s max) would evict it within a couple of hours,
-# after which headless signing fails with "cannot open '/dev/tty'". The
-# passphrase already lives in $GPG_PASSPHRASE, so caching it long-term here does
-# not change the security posture of an ephemeral dev container.
-grep -qxF "default-cache-ttl 34560000" "$GNUPGHOME/gpg-agent.conf" 2>/dev/null || \
-    echo "default-cache-ttl 34560000" >> "$GNUPGHOME/gpg-agent.conf"
-grep -qxF "max-cache-ttl 34560000" "$GNUPGHOME/gpg-agent.conf" 2>/dev/null || \
-    echo "max-cache-ttl 34560000" >> "$GNUPGHOME/gpg-agent.conf"
-gpgconf --reload gpg-agent >/dev/null 2>&1 || true
-
-# If the key has a passphrase, prime the agent cache so git doesn't prompt.
-if [ -n "${GPG_PASSPHRASE:-}" ]; then
-    echo "test" | gpg --batch --yes --pinentry-mode loopback \
-        --passphrase "$GPG_PASSPHRASE" --local-user "$FPR" \
-        --sign --armor >/dev/null 2>&1 || true
-fi
-
-echo "GPG signing configured with key $FPR (GNUPGHOME=$GNUPGHOME)"
+echo "GPG signing configured with key $FPR (GNUPGHOME=$GNUPGHOME, gpg.program=$DEVCONTAINER_DIR/gpg-wrapper.sh)"
