@@ -8,7 +8,12 @@ set -euo pipefail
 
 echo "--- 1. Configuring Claude ---"
 
-alias superclaude='claude --dangerously-skip-permissions'
+for rcfile in ~/.bashrc ~/.zshrc; do
+    if [ -f "$rcfile" ] && ! grep -q "alias superclaude=" "$rcfile"; then
+        echo "alias superclaude='claude --dangerously-skip-permissions'" >> "$rcfile"
+    fi
+done
+
 cat > ~/.claude.json << 'EOF'
 {
   "hasCompletedOnboarding": true,
