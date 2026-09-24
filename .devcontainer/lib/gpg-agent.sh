@@ -21,7 +21,10 @@ gpg_agent_ensure_local() {
     if ! gpg_agent_is_forwarded; then
         return 0
     fi
-    echo "gpg-agent at \$GNUPGHOME is forwarded/restricted; replacing with a local one."
+    # stderr, not stdout: gpg_import_and_configure's stdout is captured by its
+    # caller as the key fingerprint, and a stray log line here ends up
+    # concatenated into git's user.signingkey.
+    echo "gpg-agent at \$GNUPGHOME is forwarded/restricted; replacing with a local one." >&2
     gpgconf --homedir "$GNUPGHOME" --kill gpg-agent >/dev/null 2>&1 || true
     rm -f "$GNUPGHOME"/S.gpg-agent*
     gpg-agent --homedir "$GNUPGHOME" --daemon --batch >/dev/null 2>&1 || true
