@@ -8,7 +8,17 @@
         "--cap-add=NET_RAW"
     ],
     "mounts": [
-        "source=${localEnv:HOME}/allowed_domains,target=/etc/allowed_domains,type=bind,readonly"
+        "source=${localEnv:HOME}/allowed_domains,target=/etc/allowed_domains,type=bind,readonly",
+        // Claude Code's config home on a named Docker volume, so sessions,
+        // transcripts, credentials, settings, plugins and skills survive a
+        // container rebuild. Named volumes outlive both `docker rm` and
+        // "Rebuild Container"; they are only removed explicitly, with
+        // `docker volume rm pgcyan-claude-home`.
+        //
+        // Deliberately a volume and not a bind mount of the host's ~/.claude:
+        // container sessions stay separate from host ones, and there is no
+        // UID/permission mismatch to work around on WSL2.
+        "source=pgcyan-claude-home,target=/home/vscode/.claude,type=volume"
     ],
     "features": {
         "ghcr.io/devcontainers/features/common-utils:2": {
@@ -38,7 +48,14 @@
         // gpg-agent socket VS Code forwards to ~/.gnupg (that forwarded agent
         // forbids loopback pinentry, breaking headless signing). See
         // .devcontainer/post-start.d/20-gpg-signing.sh for the full rationale.
-        "GNUPGHOME": "/home/vscode/.gnupg-signing"
+        "GNUPGHOME": "/home/vscode/.gnupg-signing",
+        // Claude Code's config home. This is already its default location, but
+        // setting it explicitly also moves the global config file from
+        // ~/.claude.json to ~/.claude/.claude.json -- i.e. onto the persistent
+        // volume above. That file holds onboarding state, per-project trust
+        // and history, and MCP server definitions, so without this it would be
+        // the one piece of Claude Code state still lost on every rebuild.
+        "CLAUDE_CONFIG_DIR": "/home/vscode/.claude"
     },
     "postCreateCommand": "bash .devcontainer/post-create.sh",
     "postStartCommand": "bash .devcontainer/post-start.sh",

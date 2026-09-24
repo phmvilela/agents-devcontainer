@@ -56,5 +56,17 @@ RUN apt-get update && apt-get install -y ca-certificates curl gnupg && \
   npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} && \
   claude --version
 
+# Mount point for the persistent Claude Code state volume (see the "mounts"
+# entry in devcontainer.json). The directory MUST exist in the image, owned by
+# vscode, before the volume is first mounted: Docker seeds a brand-new named
+# volume from whatever is at the mount path in the image, ownership included.
+# If the path is missing, the volume is created root-owned and Claude Code
+# cannot write to its own config home.
+#
+# Note this cannot be repaired later from inside the container -- the sudoers
+# file above leaves the vscode user with no general `sudo chown`. If the volume
+# ever does end up root-owned, delete it from the host
+# (`docker volume rm pgcyan-claude-home`) and rebuild.
+RUN mkdir -p /home/vscode/.claude && chown vscode:vscode /home/vscode/.claude
 
 USER vscode
