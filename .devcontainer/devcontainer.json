@@ -14,7 +14,9 @@
         "ghcr.io/devcontainers/features/common-utils:2": {
             "installZsh": true
         },
-        "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {},
+        "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {
+            "version": "latest"
+        },
         "ghcr.io/devcontainers/features/github-cli:1": {}
     },
     "customizations": {
@@ -51,7 +53,12 @@
         "GPG_PRIVATE_KEY": "${localEnv:GPG_PRIVATE_KEY}",
         "GPG_PASSPHRASE": "${localEnv:GPG_PASSPHRASE}",
         // Base64-encoded standalone, read-only kubeconfig generated on the HOST
-        "KUBECONFIG_B64": "${localEnv:KUBECONFIG_B64}"
+        "KUBECONFIG_B64": "${localEnv:KUBECONFIG_B64}",
+        // Windows host's real LAN IP -- WORKAROUND for a WSL2 bug where
+        // Windows<->WSL2 IPv4 loopback forwarding hangs (breaks
+        // host.docker.internal). Only needed if that's broken for you; see
+        // .devcontainer/host-setup/README.md. Set in your WSL shell profile.
+        "HOST_LAN_IP": "${localEnv:HOST_LAN_IP}"
     },
     "remoteUser": "vscode",
     "containerUser": "vscode",
