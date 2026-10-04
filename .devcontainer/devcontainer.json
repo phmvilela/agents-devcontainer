@@ -61,7 +61,6 @@
     "postStartCommand": "bash .devcontainer/post-start.sh",
     // Inject your API Key / tokens from your Windows/WSL environment
     "remoteEnv": {
-        "CLAUDE_CODE_OAUTH_TOKEN": "${localEnv:CLAUDE_CODE_OAUTH_TOKEN}",
         "GH_TOKEN": "${localEnv:GH_TOKEN}",
         // Base64-encoded ASCII-armored private key + optional passphrase (see post-create.sh)
         "GPG_PRIVATE_KEY": "${localEnv:GPG_PRIVATE_KEY}",
