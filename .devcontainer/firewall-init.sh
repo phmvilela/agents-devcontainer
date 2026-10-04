@@ -29,6 +29,12 @@ fi
 iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
 # Allow inbound DNS responses
 iptables -A INPUT -p udp --sport 53 -j ACCEPT
+# DNS over TCP as well: an answer too large for UDP (login.microsoftonline.com
+# returns eight addresses behind a CNAME chain) is retried over TCP, and with
+# that blocked the name never resolves -- not for the allowlist below, and not
+# for the tools that need it.
+iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT
+iptables -A INPUT -p tcp --sport 53 -m state --state ESTABLISHED -j ACCEPT
 # Allow outbound SSH
 iptables -A OUTPUT -p tcp --dport 22 -j ACCEPT
 # Allow inbound SSH responses
@@ -73,6 +79,15 @@ fi
 while read -r domain; do
     # Skip blank lines and comments
     [[ -z "$domain" || "$domain" == \#* ]] && continue
+    # A line that is already an address range goes in as is. For services whose
+    # addresses rotate behind one name (Microsoft's sign-in endpoints publish
+    # 20.190.128.0/18 and 40.126.0.0/18), the range outlives a resolution made
+    # once at container start.
+    if [[ "$domain" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}/[0-9]{1,2}$ ]]; then
+        echo "Adding range $domain"
+        ipset add -exist allowed-domains "$domain"
+        continue
+    fi
     echo "Resolving $domain..."
     ips=$(dig +noall +answer A "$domain" | awk '$4 == "A" {print $5}')
     if [ -z "$ips" ]; then
