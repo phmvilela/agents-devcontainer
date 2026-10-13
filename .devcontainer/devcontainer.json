@@ -1,25 +1,16 @@
 {
     "name": "pgcyan Dev Container",
-    "build": {
-        "dockerfile": "Dockerfile"
-    },
-    "runArgs": [
-        "--cap-add=NET_ADMIN",
-        "--cap-add=NET_RAW"
-    ],
-    "mounts": [
-        "source=${localEnv:HOME}/allowed_domains,target=/etc/allowed_domains,type=bind,readonly",
-        // Claude Code's config home on a named Docker volume, so sessions,
-        // transcripts, credentials, settings, plugins and skills survive a
-        // container rebuild. Named volumes outlive both `docker rm` and
-        // "Rebuild Container"; they are only removed explicitly, with
-        // `docker volume rm pgcyan-claude-home`.
-        //
-        // Deliberately a volume and not a bind mount of the host's ~/.claude:
-        // container sessions stay separate from host ones, and there is no
-        // UID/permission mismatch to work around on WSL2.
-        "source=pgcyan-claude-home,target=/home/vscode/.claude,type=volume"
-    ],
+    // The dev container is one of two services: the other is the egress proxy
+    // it reaches the internet through. Mounts, capabilities and the proxy
+    // variables are in docker-compose.yml. See egress-proxy/README.md.
+    "dockerComposeFile": "docker-compose.yml",
+    "service": "devcontainer",
+    // The workspace is named after the host directory the repo is cloned in.
+    // Compose reads that name from .devcontainer/.env, written here on the
+    // host before the containers are created.
+    "initializeCommand": "echo LOCAL_WORKSPACE_FOLDER_BASENAME=${localWorkspaceFolderBasename} > .devcontainer/.env",
+    "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+    "shutdownAction": "stopCompose",
     "features": {
         "ghcr.io/devcontainers/features/common-utils:2": {
             "installZsh": true

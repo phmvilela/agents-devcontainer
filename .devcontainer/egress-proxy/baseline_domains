@@ -1,0 +1,17 @@
+# Hostnames the dev container needs whatever ~/allowed_domains says: GitHub,
+# which the firewall has always let through by address range. One name per
+# line, same syntax as ~/allowed_domains.
+github.com
+api.github.com
+uploads.github.com
+codeload.github.com
+objects.githubusercontent.com
+raw.githubusercontent.com
+release-assets.githubusercontent.com
+
+# Claude Code itself: the API, sign-in, and the session's own web side. With
+# address rules these were reachable through whatever shared an address with a
+# listed name; a proxy that decides by name has to be told.
+.anthropic.com
+.claude.ai
+.claude.com
