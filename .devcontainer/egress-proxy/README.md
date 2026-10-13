@@ -59,8 +59,10 @@ On the host, with the dev container closed or open, it does not matter:
 bash .devcontainer/egress-proxy/smoke-test.sh
 ```
 
-It builds the proxy by itself and checks what it allows and refuses. Rebuild
-the dev container only when it passes: a proxy that does not work leaves the
+It builds the proxy by itself and checks what it allows and refuses. A refusal
+is recognised by the answer being Squid's own, not by curl's exit code: curl
+reports a 403 error page as a success, so an earlier version of this script
+called two refusals "allowed". Rebuild the dev container only when it passes: a proxy that does not work leaves the
 dev container with no way out, Claude Code included.
 
 To go back: `git checkout` the previous `devcontainer.json` and rebuild. The
