@@ -1,0 +1,68 @@
+# The dev container and the egress proxy it reaches the internet through.
+#
+# The dev container's firewall (firewall-init.sh) lets HTTPS out only by way of
+# the proxy, and the proxy decides by hostname, from the host's
+# ~/allowed_domains. See egress-proxy/README.md.
+
+services:
+  devcontainer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # The firewall needs these to write its own rules.
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    command: sleep infinity
+    depends_on:
+      egress-proxy:
+        condition: service_healthy
+    environment:
+      # Both spellings: curl and Python read the lower-case names, Go and Node
+      # tools the upper-case ones.
+      HTTPS_PROXY: http://egress-proxy:3128
+      https_proxy: http://egress-proxy:3128
+      HTTP_PROXY: http://egress-proxy:3128
+      http_proxy: http://egress-proxy:3128
+      # What never goes through the proxy: this container, and the host
+      # (host-lan-workaround is the alias host-lan-access-init.sh writes).
+      NO_PROXY: localhost,127.0.0.1,::1,host.docker.internal,host-lan-workaround
+      no_proxy: localhost,127.0.0.1,::1,host.docker.internal,host-lan-workaround
+      # Node's own fetch() ignores the variables above unless told otherwise.
+      NODE_USE_ENV_PROXY: "1"
+    volumes:
+      # Mounted under the name of the host directory the repo is cloned in,
+      # as a dev container without Compose does by itself. Compose cannot know
+      # that name: devcontainer.json's initializeCommand writes it to .env.
+      - ..:/workspaces/${LOCAL_WORKSPACE_FOLDER_BASENAME:?written to .devcontainer/.env by devcontainer.json}:cached
+      - ${HOME}/allowed_domains:/etc/allowed_domains:ro
+      # Claude Code's config home on a named Docker volume, so sessions,
+      # transcripts, credentials, settings, plugins and skills survive a
+      # container rebuild. Deliberately a volume and not a bind mount of the
+      # host's ~/.claude: container sessions stay separate from host ones, and
+      # there is no UID/permission mismatch to work around on WSL2.
+      - pgcyan-claude-home:/home/vscode/.claude
+      # The Azure runtime credentials (a scoped service principal) printed by
+      # projects/pgcyan/scripts/azure/bootstrap-runtime.sh, saved on the host
+      # with mode 600. Optional: post-start.d/50-pgcyan-toolchain.sh installs
+      # the Azure CLI + Terraform and exports the variables only when the file
+      # exists. (A missing host file makes Docker mount an empty directory,
+      # which the script treats as absent.)
+      - ${HOME}/pgcyan-azure.env:/etc/pgcyan-azure.env:ro
+
+  egress-proxy:
+    build:
+      context: ./egress-proxy
+    restart: unless-stopped
+    environment:
+      # 0 = decide on the name in the CONNECT request alone. See entrypoint.sh.
+      EGRESS_PROXY_SNI_CHECK: ${EGRESS_PROXY_SNI_CHECK:-1}
+    volumes:
+      - ${HOME}/allowed_domains:/etc/egress-proxy/allowed_domains:ro
+
+volumes:
+  # The volume the single-container setup created, under the same name: it is
+  # only removed explicitly, with `docker volume rm pgcyan-claude-home`.
+  pgcyan-claude-home:
+    name: pgcyan-claude-home
+    external: true

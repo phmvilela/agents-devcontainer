@@ -69,6 +69,22 @@ while read -r cidr; do
     ipset add -exist allowed-domains "$cidr"
 done < <(echo "$gh_ranges" | jq -r '(.web + .api + .git)[]' | aggregate -q)
 
+# With the egress proxy next to this container (docker-compose.yml), hostnames
+# are its business: HTTPS leaves through it and it decides by name, so nothing
+# here depends on which addresses a name had when the container started. Only
+# address ranges and `direct:` hosts are opened here. The proxy is found by the
+# name Docker gives it and not by a variable, so that whoever may run this
+# script cannot point it somewhere else.
+EGRESS_PROXY_HOST="egress-proxy"
+EGRESS_PROXY_URL="http://${EGRESS_PROXY_HOST}:3128"
+USE_PROXY=0
+if getent hosts "$EGRESS_PROXY_HOST" >/dev/null; then
+    USE_PROXY=1
+    echo "Egress proxy found: hostnames in the allowlist are left to it"
+else
+    echo "No egress proxy: resolving the allowlist's hostnames to addresses"
+fi
+
 # Resolve and add other allowed domains
 ALLOWED_DOMAINS_FILE="/etc/allowed_domains"
 if [ ! -f "$ALLOWED_DOMAINS_FILE" ]; then
@@ -77,6 +93,7 @@ if [ ! -f "$ALLOWED_DOMAINS_FILE" ]; then
 fi
 
 while read -r domain; do
+    domain="${domain%$'\r'}"
     # Skip blank lines and comments
     [[ -z "$domain" || "$domain" == \#* ]] && continue
     # A line that is already an address range goes in as is. For services whose
@@ -88,6 +105,16 @@ while read -r domain; do
         ipset add -exist allowed-domains "$domain"
         continue
     fi
+    # `direct:host` is a host reached without the proxy -- Postgres, SSH --
+    # and is resolved here with or without one. Every other name is the
+    # proxy's when there is one (the host itself stays reachable directly).
+    if [[ "$domain" == direct:* ]]; then
+        domain="${domain#direct:}"
+    elif [ "$USE_PROXY" = 1 ] && [ "$domain" != "host.docker.internal" ]; then
+        continue
+    fi
+    # A wildcard only means something to the proxy.
+    [[ "$domain" == .* || "$domain" == \** ]] && continue
     echo "Resolving $domain..."
     ips=$(dig +noall +answer A "$domain" | awk '$4 == "A" {print $5}')
     if [ -z "$ips" ]; then
@@ -141,6 +168,20 @@ if curl --connect-timeout 5 https://example.com >/dev/null 2>&1; then
     exit 1
 else
     echo "Firewall verification passed - unable to reach https://example.com as expected"
+fi
+
+# Verify the proxy: it has to let a listed name through and refuse another,
+# or every tool in this container is cut off without saying why.
+if [ "$USE_PROXY" = 1 ]; then
+    if curl --connect-timeout 5 -x "$EGRESS_PROXY_URL" https://example.com >/dev/null 2>&1; then
+        echo "ERROR: Firewall verification failed - the egress proxy let https://example.com through"
+        exit 1
+    fi
+    if ! curl --connect-timeout 5 -x "$EGRESS_PROXY_URL" https://api.github.com/zen >/dev/null 2>&1; then
+        echo "ERROR: Firewall verification failed - unable to reach https://api.github.com through the egress proxy"
+        exit 1
+    fi
+    echo "Firewall verification passed - the egress proxy allows and refuses as expected"
 fi
 
 # Verify GitHub API access
