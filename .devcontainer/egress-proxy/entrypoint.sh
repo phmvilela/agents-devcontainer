@@ -84,7 +84,16 @@ CONF
 
 if [ "${1:-}" = "reload" ]; then
     write_list
-    squid -k reconfigure -f "$CONF"
+    # Signal Squid directly instead of `squid -k reconfigure`: that one reads
+    # /run/squid.pid and refuses a PID of 1 ("unreasonably small"), which is
+    # exactly what the PID is here, since the entrypoint execs Squid as the
+    # container's first process. SIGHUP is what `-k reconfigure` sends anyway.
+    if kill -HUP 1 2>/dev/null; then
+        echo "egress-proxy: Squid told to re-read it (docker logs shows the reconfigure)"
+    else
+        echo "egress-proxy: could not signal Squid; restart this container instead" >&2
+        exit 1
+    fi
     exit 0
 fi
 

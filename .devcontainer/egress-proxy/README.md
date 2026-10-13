@@ -35,10 +35,14 @@ direct:db.example.com         # a host reached without the proxy (Postgres, SSH)
 - `baseline_domains` in this directory is always added: GitHub and Claude Code's own hosts.
 - Avoid wildcards for services that host other people's content
   (`.blob.core.windows.net`, `.githubusercontent.com`): name the account.
-- After an edit, on the host: `docker exec <egress-proxy container> entrypoint.sh reload`.
-  No dev container restart. If your editor replaces the file instead of
-  writing into it, the container still sees the old one: restart the proxy
-  container instead.
+- After an edit, on the host:
+  `docker exec "$(docker ps -qf name=egress-proxy)" entrypoint.sh reload`.
+  No dev container restart. It prints how many hostnames are allowed, which is
+  how you know it read the file.
+- `docker restart "$(docker ps -qf name=egress-proxy)"` does the same more
+  bluntly, and is what to use if the reload cannot signal Squid, or if your
+  editor replaces `~/allowed_domains` instead of writing into it (the
+  container then still holds the old file).
 
 ## Seeing what was refused
 
